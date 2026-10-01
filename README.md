@@ -17,4 +17,4 @@ Import this folder into Vercel. No build command is required.
 - Vercel configuration
 
 ## Note
-The PDF generator uses the html2pdf.js CDN from `index.html`, so the deployed site needs internet access for PDF generation. If the CDN fails to load (e.g. offline), the page falls back to the browser's Print dialog ("Print" button) so a certificate can still be saved as PDF.
+The PDF generator uses the html2canvas and jsPDF CDNs (both from cdnjs) loaded in `index.html`, so the deployed site needs internet access for PDF generation. The PDF page is sized to exactly match the rendered certificate, so it always comes out as a single page with no splitting or extra blank space. If the CDN fails to load (e.g. offline), the page falls back to the browser's Print dialog ("Print" button) so a certificate can still be saved as PDF.

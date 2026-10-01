@@ -8,7 +8,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@600;700&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
 :root{--ink:#172033;--muted:#64748b;--line:#dbe2ea;--accent:#7c3aed;--bg:#f6f7fb;--card:#fff}
 *{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;background:var(--bg);color:var(--ink)}
@@ -160,35 +161,61 @@ function generate(){
  document.getElementById("sigtitle").textContent=lang==="fr"?"Présidente, Chapitre SCC Québec":"President, SCC Québec Chapter";
  document.getElementById("cert").style.display="block";
  document.getElementById("cert").scrollIntoView({behavior:"smooth"});
- downloadPDF(true);
+ // Wait for the signature font and a full layout/paint pass before
+ // measuring the certificate, otherwise the PDF is sized from a
+ // half-rendered element and content gets cut or pushed to a second page.
+ // Race the paint-frame wait against a short timeout so this can never
+ // hang (e.g. if the tab is backgrounded and frames are throttled).
+ const ready = (document.fonts && document.fonts.ready) ? document.fonts.ready : Promise.resolve();
+ const paintFrame = new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+ const settle = Promise.race([paintFrame, new Promise(r=>setTimeout(r,250))]);
+ ready.then(()=>settle).then(()=>downloadPDF(true));
 }
 
-function downloadPDF(isAuto){
+async function downloadPDF(isAuto){
  const el=document.getElementById("certificate");
  const name=document.getElementById("name").value.trim() || "certificate";
  const lang=document.getElementById("language").value;
  const status=document.getElementById("pdfStatus");
  const filename=`SCC-Quebec-Certificate-${name.replace(/[^a-z0-9]+/gi,"-")}.pdf`;
- if(typeof html2pdf==="undefined"){
+ const jsPDFCtor = window.jspdf && window.jspdf.jsPDF;
+ if(typeof html2canvas==="undefined" || !jsPDFCtor){
    if(status) status.textContent = lang==="fr"
      ? "Le générateur de PDF n'a pas pu se charger. Utilisez le bouton Imprimer."
      : "PDF generator could not load. Please use the Print button instead.";
    return;
  }
  if(status) status.textContent = lang==="fr" ? "Génération du PDF…" : "Generating PDF…";
- html2pdf().set({
-   margin:0.3,
-   filename:filename,
-   image:{type:"jpeg",quality:0.98},
-   html2canvas:{scale:2,useCORS:true},
-   jsPDF:{unit:"in",format:"letter",orientation:"portrait"}
- }).from(el).save().then(()=>{
+ const margin=0.3; // inches, on all sides of the single PDF page
+ const scale=2;
+ try{
+   // Render the certificate to a canvas once, then build a PDF whose page
+   // is sized to exactly match that canvas (plus the margin). Because we
+   // add the rendered image only once and never let a pagination routine
+   // decide where to cut, the certificate can never be split across pages
+   // or padded with unexpected blank space.
+   const canvas=await html2canvas(el,{
+     scale:scale,
+     useCORS:true,
+     backgroundColor:"#ffffff",
+     windowWidth:el.scrollWidth,
+     windowHeight:el.scrollHeight
+   });
+   const pxToIn=1/(96*scale);
+   const contentWIn=canvas.width*pxToIn;
+   const contentHIn=canvas.height*pxToIn;
+   const pageWIn=contentWIn+margin*2;
+   const pageHIn=contentHIn+margin*2;
+   const doc=new jsPDFCtor({orientation:"portrait",unit:"in",format:[pageWIn,pageHIn]});
+   const imgData=canvas.toDataURL("image/jpeg",0.98);
+   doc.addImage(imgData,"JPEG",margin,margin,contentWIn,contentHIn);
+   doc.save(filename);
    if(status) status.textContent = lang==="fr" ? "PDF téléchargé." : "PDF downloaded.";
- }).catch(()=>{
+ }catch(e){
    if(status) status.textContent = lang==="fr"
      ? "Échec de la génération automatique. Utilisez le bouton Imprimer."
      : "Automatic generation failed. Please use the Print button.";
- });
+ }
 }
 </script>
 </body>
